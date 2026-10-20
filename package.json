@@ -1,0 +1,46 @@
+{
+  "name": "mero-horarios-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API REST com os horários de salas e laboratórios do IFS Campus Lagarto (projeto MERO)",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "start": "node dist/src/main.js",
+    "start:dev": "npm run build && node dist/src/main.js",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev --name init",
+    "db:deploy": "prisma migrate deploy",
+    "sync": "node dist/src/cli/sync.js",
+    "sync:dry": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/cli/sync.ts --dry-run",
+    "inspect": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/inspect.ts",
+    "room:link": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/link-room.ts",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"test/domain/*.test.ts\"",
+    "test:e2e": "npm run build && node --test \"dist/test/e2e/*.test.js\"",
+    "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
+    "inspect:raw": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/inspect-raw.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@nestjs/throttler": "^6.4.0",
+    "@prisma/client": "^6.16.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "helmet": "^8.0.0",
+    "pdfjs-dist": "5.6.205",
+    "prisma": "^6.16.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.0.0",
+    "@types/node": "^22.10.0",
+    "pdf-lib": "^1.17.1",
+    "typescript": "~5.9.0"
+  }
+}

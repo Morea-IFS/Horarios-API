@@ -1,0 +1,19 @@
+# Banco PostgreSQL local para desenvolvimento. A senha abaixo é SÓ para uso local.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: mero
+      POSTGRES_PASSWORD: mero_local_dev
+      POSTGRES_DB: mero_horarios
+    ports:
+      - "5433:5432" # porta 5433 no seu computador, para não colidir com outro Postgres na 5432
+    volumes:
+      - mero_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mero -d mero_horarios"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  mero_pgdata:

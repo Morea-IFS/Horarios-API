@@ -1,0 +1,138 @@
+// Modelo relacional da MERO Horários API.
+// Uma "versão" é uma grade importada de um PDF. Apenas uma versão é a ATUAL (tabela current_version).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ScheduleVersion {
+  id            String   @id @default(uuid())
+  semester      String // ex.: "2026.2"
+  sourceUrl     String
+  contentSha256 String   @unique
+  pdfCreatedAt  String? // data "Horário criado" lida do PDF (AAAA-MM-DD)
+  activatedAt   DateTime @default(now())
+  roomCount     Int
+  sessionCount  Int
+  issues        Json // avisos e informações da validação
+  createdAt     DateTime @default(now())
+
+  periods  Period[]
+  rooms    VersionRoom[]
+  sessions ClassSession[]
+  current  CurrentVersion?
+
+  @@map("schedule_versions")
+}
+
+/// Ponteiro único para a versão ativa. Trocar a versão = atualizar esta linha (dentro de uma transação).
+model CurrentVersion {
+  id        Int             @id @default(1)
+  versionId String          @unique
+  version   ScheduleVersion @relation(fields: [versionId], references: [id])
+  updatedAt DateTime        @updatedAt
+
+  @@map("current_version")
+}
+
+/// Sala estável entre semestres. Só é reaproveitada quando o nome normalizado é IDÊNTICO.
+model Room {
+  id            String   @id @default(uuid())
+  canonicalName String
+  normalizedKey String   @unique
+  createdAt     DateTime @default(now())
+
+  externalRefs RoomExternalRef[]
+  versionRooms VersionRoom[]
+  sessions     ClassSession[]
+
+  @@map("rooms")
+}
+
+/// Identificadores de sala em outros sistemas (ex.: MERO).
+model RoomExternalRef {
+  id         String @id @default(uuid())
+  roomId     String
+  room       Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  system     String
+  externalId String
+
+  @@unique([system, externalId])
+  @@unique([roomId, system])
+  @@map("room_external_refs")
+}
+
+/// Quais salas existem em cada versão, com o nome ORIGINAL do PDF e como foi o casamento.
+model VersionRoom {
+  id          String          @id @default(uuid())
+  versionId   String
+  version     ScheduleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  roomId      String
+  room        Room            @relation(fields: [roomId], references: [id])
+  rawName     String
+  page        Int
+  matchStatus String // EXACT | NEW | NEEDS_REVIEW
+  candidates  Json? // possíveis correspondências quando NEEDS_REVIEW
+
+  @@unique([versionId, roomId])
+  @@index([matchStatus])
+  @@map("version_rooms")
+}
+
+model Period {
+  id          String          @id @default(uuid())
+  versionId   String
+  version     ScheduleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  code        String // "1".."14" e "5,5"
+  sortOrder   Int
+  startMinute Int
+  endMinute   Int
+
+  @@unique([versionId, code])
+  @@map("periods")
+}
+
+model ClassSession {
+  id             String          @id @default(uuid())
+  versionId      String
+  version        ScheduleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  roomId         String
+  room           Room            @relation(fields: [roomId], references: [id])
+  weekday        Int // 1 = segunda ... 5 = sexta
+  startPeriod    String
+  endPeriod      String
+  startMinute    Int
+  endMinute      Int
+  kind           String // CLASS | TEACHING_PROJECT | EXTENSION | MONITORING | OTHER
+  classCodes     String[] // normalizados
+  classCodesRaw  String[] // como aparecem no PDF
+  lines          String[] // texto original do card
+  rawText        String
+  page           Int
+
+  @@index([versionId, roomId, weekday])
+  @@index([versionId, weekday])
+  @@map("class_sessions")
+}
+
+model ImportRun {
+  id            String   @id @default(uuid())
+  trigger       String // github-actions | manual | local
+  outcome       String // NO_CHANGE | PUBLISHED | REJECTED | FAILED | DRY_RUN_OK
+  startedAt     DateTime
+  finishedAt    DateTime
+  sourceUrl     String?
+  contentSha256 String?
+  semester      String?
+  versionId     String?
+  errorCode     String?
+  issues        Json
+
+  @@index([startedAt])
+  @@map("import_runs")
+}

@@ -1,0 +1,50 @@
+name: Sincronizar horários
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # segundas, 09:00 UTC (06:00 em Brasília)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Só validar (não grava no banco)"
+        type: boolean
+        default: false
+      force:
+        description: "Reimportar mesmo se o PDF não mudou"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-horarios
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - name: Sincronizar
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          ARGS="--trigger=github-actions --report=sync-report.json"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          node dist/src/cli/sync.js $ARGS
+      - name: Guardar relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-report
+          path: sync-report.json
+          if-no-files-found: ignore
