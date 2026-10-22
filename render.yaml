@@ -1,14 +1,18 @@
-# Blueprint do Render (opcional). Banco: use o PostgreSQL do Supabase e cole a URL em DATABASE_URL.
-# O Render não builda o código: ele roda a imagem publicada no GHCR pelo workflow Release.
-# A cada tag v*, o workflow chama o Deploy Hook (secret RENDER_DEPLOY_HOOK_URL) com a imagem nova.
+# Blueprint do Render (opcional: os mesmos valores servem para criar o serviço pelo painel).
+# Banco: use o PostgreSQL do Supabase e cole a URL em DATABASE_URL.
+# O Render clona este repositório (público) e monta a imagem pelo Dockerfile.
+# Deploy automático desligado: a cada tag v*, o workflow Release chama o Deploy Hook
+# (secret RENDER_DEPLOY_HOOK_URL) com o commit da tag.
 services:
   - type: web
     name: mero-horarios-api
-    runtime: image
-    image:
-      url: ghcr.io/morea-ifs/horarios-api:latest
+    runtime: docker
+    repo: https://github.com/Morea-IFS/Horarios-API
+    branch: main
+    dockerfilePath: ./Dockerfile
+    region: virginia # junto dos outros serviços da área de trabalho; o Supabase (us-east-2) fica ao lado
     plan: free
-    autoDeploy: false
+    autoDeployTrigger: "off"
     healthCheckPath: /api/v1/health
     envVars:
       - key: DATABASE_URL
@@ -18,4 +22,4 @@ services:
       - key: RATE_LIMIT_PER_MINUTE
         value: "300"
       - key: CORS_ORIGINS
-        value: "*"
+        value: https://mero.morea-ifs.org

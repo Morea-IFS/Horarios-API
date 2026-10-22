@@ -26,7 +26,8 @@ PDF oficial (ifs.edu.br) ──sync (CLI)──▶ PostgreSQL ◀──leitura�
 | API, Prisma, PostgreSQL e imagem Docker | **Rodando localmente** (22/10/2026): migration aplicada, `/health` ok, CORS ok |
 | Integração com o MERO (`/horarios`) | **Testada localmente** (22/10/2026). A página está na branch `ContadorAcess` do mapa |
 | GitHub Actions (CI, Release, Sync) | Escritos, **ainda não rodaram** |
-| Render e Supabase (produção) | Configurados (`render.yaml`), **ainda não publicados** |
+| Supabase (banco de produção) | Criado, migration aplicada e grade 2026.2 importada (22/10/2026) |
+| Render (API em produção) | Configurado (`render.yaml`), **ainda não publicado** |
 
 ## 3. Dependências
 
@@ -210,13 +211,12 @@ Então: card = trecho da coluna entre duas linhas que contém texto.
 
 - Trabalhe na `develop` ou numa `feature/*`. A `main` recebe só versões prontas, com merge feito pelo responsável.
 - **CI** (`.github/workflows/ci.yml`): a cada push em `develop`, `main` ou `feature/**` e em todo PR, roda `npm ci`, os testes, o typecheck, os testes e2e e o build da imagem.
-- **Release** (`.github/workflows/release.yml`): ao criar uma tag `v*` (ex.: `git tag v1.0.0 && git push origin v1.0.0`), publica a imagem em `ghcr.io/morea-ifs/horarios-api` (`:<versão>` e `:latest`), cria a Release e chama o Deploy Hook do Render.
+- **Release** (`.github/workflows/release.yml`): ao criar uma tag `v*` (ex.: `git tag v1.0.0 && git push origin v1.0.0`), publica a imagem em `ghcr.io/morea-ifs/horarios-api` (`:<versão>` e `:latest`, como registro da versão), cria a Release e chama o Deploy Hook do Render com o commit da tag. O Render monta a própria imagem a partir do `Dockerfile` deste repositório.
 - **Sync semanal** (`.github/workflows/sync-horarios.yml`): toda segunda às 06:00 (Brasília) e também manual. Usa o secret `DATABASE_URL`.
 
 **Configuração única, feita por quem administra o repositório:**
-- **Pacote no GHCR:** depois da primeira Release, deixe o pacote `horarios-api` **público**, para o Render baixar a imagem.
 - **Secrets do GitHub:** crie `DATABASE_URL` (Session pooler do Supabase, porque o GitHub usa IPv4) e `RENDER_DEPLOY_HOOK_URL`.
-- **No Render:** crie um Web Service do tipo **Existing Image** apontando para `ghcr.io/morea-ifs/horarios-api:latest` (modelo em `render.yaml`). Defina `DATABASE_URL` e `CORS_ORIGINS`, com a URL do mapa na Vercel. O health check fica em `/api/v1/health`.
+- **No Render:** crie um Web Service a partir do **repositório público** `https://github.com/Morea-IFS/Horarios-API`, branch `main`, runtime **Docker**, região **Virginia** (a mesma dos outros serviços da área de trabalho; o Supabase, em Ohio, fica ao lado) e **Auto-Deploy desligado** (modelo em `render.yaml`). Defina `DATABASE_URL`, `NODE_ENV=production` e `CORS_ORIGINS=https://mero.morea-ifs.org`. O health check fica em `/api/v1/health`. Copie o **Deploy Hook** (Settings) para o secret `RENDER_DEPLOY_HOOK_URL`.
 - **Na Vercel** (projeto do mapa): defina `NEXT_PUBLIC_HORARIOS_API_URL` com a URL do Render terminando em `/api/v1`.
 
 Ao subir, o contêiner (`scripts/start.sh`) roda `prisma migrate deploy` antes da API. Em produção, ele recusa subir se não houver migrations.
@@ -224,7 +224,7 @@ Ao subir, o contêiner (`scripts/start.sh`) roda `prisma migrate deploy` antes d
 ## 12. Hospedagem gratuita: riscos
 
 Confira os planos atuais antes de contar com eles:
-- **Render (grátis):** o serviço "dorme" por inatividade, e a primeira requisição depois disso demora. O mapa espera até 45 s.
+- **Render (grátis):** o serviço "dorme" por inatividade, e a primeira requisição depois disso demora. O mapa espera até 45 s. Cada deploy monta a imagem do zero, o que leva alguns minutos.
 - **Supabase (grátis):** o projeto pode ser pausado por inatividade e não tem backup automático. Os dados podem ser recriados a partir do PDF.
 - **GitHub Actions:** workflows agendados são desativados depois de cerca de 60 dias sem atividade no repositório.
 
