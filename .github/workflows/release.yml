@@ -1,0 +1,79 @@
+name: Release
+
+# Ao criar uma tag de versão (ex.: v1.0.0): testa, publica a imagem no GHCR,
+# cria a Release no GitHub e pede ao Render para subir a nova imagem.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # criar a Release
+  packages: write # publicar no GHCR
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/morea-ifs/horarios-api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run test:e2e
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versão a partir da tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build e publicação da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Criar Release no GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes \
+            --notes "Imagem: \`${IMAGE}:${{ steps.version.outputs.version }}\`"
+      - name: Deploy no Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::warning::Secret RENDER_DEPLOY_HOOK_URL não configurado; deploy no Render não foi disparado."
+            exit 0
+          fi
+          IMG_URL=$(printf '%s' "${IMAGE}:${{ steps.version.outputs.version }}" | jq -sRr @uri)
+          curl -fsS -X POST "${RENDER_DEPLOY_HOOK_URL}&imgURL=${IMG_URL}" > /dev/null
+          echo "Deploy solicitado ao Render com ${IMAGE}:${{ steps.version.outputs.version }}"

@@ -1,0 +1,75 @@
+name: CI
+
+# Roda a cada push nas branches de trabalho e em todo pull request.
+on:
+  push:
+    branches: [develop, main, "feature/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run test:e2e # usa repositório em memória, não precisa de banco
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Postgres vazio só para o smoke test; a senha é descartável (a máquina é apagada no fim).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mero
+          POSTGRES_PASSWORD: mero_ci
+          POSTGRES_DB: mero_horarios
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mero -d mero_horarios"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build da imagem (sem publicar)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true # deixa a imagem disponível para o docker run abaixo
+          tags: horarios-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test (sobe o contêiner como no Render)
+        run: |
+          docker run -d --name api --network host \
+            -e NODE_ENV=production \
+            -e DATABASE_URL=postgresql://mero:mero_ci@localhost:5432/mero_horarios \
+            horarios-api:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/v1/health && break
+            [ "$i" = 30 ] && { echo "::error::A API não respondeu /health em 60 s"; exit 1; }
+            sleep 2
+          done
+          # Tabelas criadas pelas migrations, mas sem grade: tem que ser 503 (500 = migration não aplicou).
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/v1/metadata/current)
+          [ "$code" = 503 ] || { echo "::error::/metadata/current respondeu $code, esperado 503"; exit 1; }
+      - name: Logs do contêiner
+        if: always()
+        run: docker logs api || true
