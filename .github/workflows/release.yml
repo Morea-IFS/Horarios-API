@@ -1,7 +1,7 @@
 name: Release
 
 # Ao criar uma tag de versão (ex.: v1.0.0): testa, publica a imagem no GHCR,
-# cria a Release no GitHub e pede ao Render para subir a nova imagem.
+# cria a Release no GitHub e pede ao Render para montar e subir o commit da tag.
 on:
   push:
     tags: ["v*"]
@@ -74,6 +74,6 @@ jobs:
             echo "::warning::Secret RENDER_DEPLOY_HOOK_URL não configurado; deploy no Render não foi disparado."
             exit 0
           fi
-          IMG_URL=$(printf '%s' "${IMAGE}:${{ steps.version.outputs.version }}" | jq -sRr @uri)
-          curl -fsS -X POST "${RENDER_DEPLOY_HOOK_URL}&imgURL=${IMG_URL}" > /dev/null
-          echo "Deploy solicitado ao Render com ${IMAGE}:${{ steps.version.outputs.version }}"
+          # O Render monta a imagem a partir do repositório; "ref" fixa o commit da tag.
+          curl -fsS -X POST "${RENDER_DEPLOY_HOOK_URL}&ref=${GITHUB_SHA}" > /dev/null
+          echo "Deploy solicitado ao Render com o commit ${GITHUB_SHA} (${GITHUB_REF_NAME})"
