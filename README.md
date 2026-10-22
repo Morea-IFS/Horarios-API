@@ -5,6 +5,13 @@ API REST com os horários **previstos** das salas e laboratórios do IFS Campus 
 
 Este README é o tutorial para quem vai mexer no projeto: o que instalar, como rodar tudo na sua máquina e como entregar.
 
+**Em produção:**
+
+| O quê | Endereço |
+|---|---|
+| API | https://mero-api-gltq.onrender.com/api/v1 (Swagger em https://mero-api-gltq.onrender.com/docs) |
+| Página que usa a API | https://mero.morea-ifs.org/horarios |
+
 ---
 
 ## 1. Como funciona (resumo)
@@ -23,11 +30,11 @@ PDF oficial (ifs.edu.br) ──sync (CLI)──▶ PostgreSQL ◀──leitura�
 |---|---|
 | Lógica (grade, validação, disponibilidade, sync) | Testada com `npm test` |
 | Leitura do PDF real 2026.2 | Testada: 63 salas, 652 aulas, 0 erros |
-| API, Prisma, PostgreSQL e imagem Docker | **Rodando localmente** (22/10/2026): migration aplicada, `/health` ok, CORS ok |
-| Integração com o MERO (`/horarios`) | **Testada localmente** (22/10/2026). A página está na branch `ContadorAcess` do mapa |
-| GitHub Actions (CI, Release, Sync) | Escritos, **ainda não rodaram** |
-| Supabase (banco de produção) | Criado, migration aplicada e grade 2026.2 importada (22/10/2026) |
-| Render (API em produção) | Configurado (`render.yaml`), **ainda não publicado** |
+| API, Prisma, PostgreSQL e imagem Docker | Rodando localmente e em produção |
+| Integração com o MERO (`/horarios`) | **No ar** desde 22/10/2026 (`master` do mapa, publicada pela Vercel) |
+| GitHub Actions | CI verde, sync manual testado e Release `v1.0.1` com deploy automático no Render |
+| Supabase (banco de produção) | Região us-east-2. Migration aplicada e grade 2026.2 importada |
+| Render (API em produção) | Serviço `mero-api`, plano free, região Virginia. Deploy só por tag `v*` |
 
 ## 3. Dependências
 
