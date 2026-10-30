@@ -5,6 +5,13 @@ API REST com os horários **previstos** das salas e laboratórios do IFS Campus 
 
 Este README é o tutorial para quem vai mexer no projeto: o que instalar, como rodar tudo na sua máquina e como entregar.
 
+**Em produção:**
+
+| O quê | Endereço |
+|---|---|
+| API | https://mero-api-gltq.onrender.com/api/v1 (Swagger em https://mero-api-gltq.onrender.com/docs) |
+| Página que usa a API | https://mero.morea-ifs.org/horarios |
+
 ---
 
 ## 1. Como funciona (resumo)
@@ -23,11 +30,11 @@ PDF oficial (ifs.edu.br) ──sync (CLI)──▶ PostgreSQL ◀──leitura�
 |---|---|
 | Lógica (grade, validação, disponibilidade, sync) | Testada com `npm test` |
 | Leitura do PDF real 2026.2 | Testada: 63 salas, 652 aulas, 0 erros |
-| API, Prisma, PostgreSQL e imagem Docker | **Rodando localmente** (22/10/2026): migration aplicada, `/health` ok, CORS ok |
-| Integração com o MERO (`/horarios`) | **Testada localmente** (22/10/2026). A página está na branch `ContadorAcess` do mapa |
-| GitHub Actions (CI, Release, Sync) | Escritos, **ainda não rodaram** |
-| Supabase (banco de produção) | Criado, migration aplicada e grade 2026.2 importada (22/10/2026) |
-| Render (API em produção) | Configurado (`render.yaml`), **ainda não publicado** |
+| API, Prisma, PostgreSQL e imagem Docker | Rodando localmente e em produção |
+| Integração com o MERO (`/horarios`) | **No ar** desde 22/10/2026 (`master` do mapa, publicada pela Vercel) |
+| GitHub Actions | CI verde, sync manual testado e Release `v1.0.1` com deploy automático no Render |
+| Supabase (banco de produção) | Região us-east-2. Migration aplicada e grade 2026.2 importada |
+| Render (API em produção) | Serviço `mero-api`, plano free, região Virginia. Deploy só por tag `v*` |
 
 ## 3. Dependências
 
@@ -211,13 +218,45 @@ Então: card = trecho da coluna entre duas linhas que contém texto.
 
 - Trabalhe na `develop` ou numa `feature/*`. A `main` recebe só versões prontas, com merge feito pelo responsável.
 - **CI** (`.github/workflows/ci.yml`): a cada push em `develop`, `main` ou `feature/**` e em todo PR, roda `npm ci`, os testes, o typecheck, os testes e2e e o build da imagem.
-- **Release** (`.github/workflows/release.yml`): ao criar uma tag `v*` (ex.: `git tag v1.0.0 && git push origin v1.0.0`), publica a imagem em `ghcr.io/morea-ifs/horarios-api` (`:<versão>` e `:latest`, como registro da versão), cria a Release e chama o Deploy Hook do Render com o commit da tag. O Render monta a própria imagem a partir do `Dockerfile` deste repositório.
+- **Release** (`.github/workflows/release.yml`): ao criar uma tag `v*` (ex.: `git tag v1.0.0 && git push origin v1.0.0`), publica a imagem em `ghcr.io/morea-ifs/horarios-api` (`:<versão>` e `:latest`, como registro da versão), cria a Release e chama o Deploy Hook do Render com o commit da tag. O Render monta a própria imagem a partir do `Dockerfile` deste repositório. Se a AWS estiver configurada (ver abaixo), o job `deploy-aws` também atualiza a EC2 com a imagem do GHCR. Tag com sufixo (ex.: `v1.1.0-rc1`) não faz deploy na EC2.
 - **Sync semanal** (`.github/workflows/sync-horarios.yml`): toda segunda às 06:00 (Brasília) e também manual. Usa o secret `DATABASE_URL`.
 
 **Configuração única, feita por quem administra o repositório:**
 - **Secrets do GitHub:** crie `DATABASE_URL` (Session pooler do Supabase, porque o GitHub usa IPv4) e `RENDER_DEPLOY_HOOK_URL`.
 - **No Render:** crie um Web Service a partir do **repositório público** `https://github.com/Morea-IFS/Horarios-API`, branch `main`, runtime **Docker**, região **Virginia** (a mesma dos outros serviços da área de trabalho; o Supabase, em Ohio, fica ao lado) e **Auto-Deploy desligado** (modelo em `render.yaml`). Defina `DATABASE_URL`, `NODE_ENV=production` e `CORS_ORIGINS=https://mero.morea-ifs.org`. O health check fica em `/api/v1/health`. Copie o **Deploy Hook** (Settings) para o secret `RENDER_DEPLOY_HOOK_URL`.
 - **Na Vercel** (projeto do mapa): defina `NEXT_PUBLIC_HORARIOS_API_URL` com a URL do Render terminando em `/api/v1`.
+
+**Deploy automático na EC2 (AWS), ao lado do Render:**
+
+O job `deploy-aws` usa o **SSM** da AWS (não abre SSH) e entra na AWS por **OIDC** (nenhuma chave da AWS fica no GitHub). Na EC2 ele roda `cd /opt/horarios-api && export HORARIOS_TAG=<versão> && docker compose pull && docker compose up -d` e fica vermelho se o comando falhar. Ele só roda quando estas **variáveis** existem em *Settings → Secrets and variables → Actions → Variables*; sem elas, é pulado e o release continua verde (o Render segue funcionando igual):
+
+| Variável | Valor | Obrigatória |
+|---|---|---|
+| `AWS_DEPLOY_ROLE` | ARN da IAM role que o GitHub assume | sim |
+| `EC2_INSTANCE_ID` | id da instância (ex.: `i-0abc123...`) | sim |
+| `AWS_REGION` | região da instância | não (padrão `us-east-1`) |
+| `DEPLOY_PATH` | pasta do compose na EC2 | não (padrão `/opt/horarios-api`) |
+
+Do lado da AWS (quem cuida da conta):
+
+1. **Provedor OIDC do GitHub** no IAM (`token.actions.githubusercontent.com`, audiência `sts.amazonaws.com`).
+2. **IAM role** confiando nesse provedor, limitada a `repo:Morea-IFS/Horarios-API:ref:refs/tags/v*`, com `ssm:SendCommand` (documento `AWS-RunShellScript` e a instância) e `ssm:GetCommandInvocation`.
+3. **EC2** com Docker + plugin Compose e o **SSM Agent**, com perfil de instância com `AmazonSSMManagedInstanceCore`.
+4. Em `/opt/horarios-api` na EC2, um `docker-compose.yml` com a API (o banco continua no Supabase):
+
+   ```yaml
+   services:
+     api:
+       image: ghcr.io/morea-ifs/horarios-api:${HORARIOS_TAG:-latest}
+       restart: unless-stopped
+       env_file: .env          # DATABASE_URL, NODE_ENV=production, CORS_ORIGINS
+       ports:
+         - "3000:3000"         # atrás de um proxy com HTTPS; health check em /api/v1/health
+   ```
+
+5. Como o pacote do GHCR é privado: `docker login ghcr.io` na EC2 com um token de escopo `read:packages`.
+
+Quando a EC2 estiver no ar, a URL da API na Vercel (`NEXT_PUBLIC_HORARIOS_API_URL`) e o `CORS_ORIGINS` decidem qual dos dois (Render ou EC2) o mapa usa.
 
 Ao subir, o contêiner (`scripts/start.sh`) roda `prisma migrate deploy` antes da API. Em produção, ele recusa subir se não houver migrations.
 
